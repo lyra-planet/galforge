@@ -1,0 +1,9 @@
+selftest/out/
+__pycache__/
+*.pyc
+# make_engines.py 每次重建
+selftest/old/
+selftest/badengine/
+selftest/good/index.html
+selftest/good/music.js
+selftest/good/pixel_art.js

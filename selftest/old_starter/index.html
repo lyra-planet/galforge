@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>游戏名</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&family=VT323&display=swap">
+<style>
+/* 布局：横屏时 16:9 舞台居中，对话框压在画面底部；竖屏时画面在上、对话框在下。字体栈每一层都带中文字体 */
+:root {
+  --ink: #16131c; --panel: #1f1d2b; --line: #4a4660; --text: #f7f4ee; --muted: #9a97ab; --soft: #e2dcef;
+  --accent: #f08fb4; --warn: #e5707a; --clue: #79b58f;
+  --f-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --f-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --f-pixel: "VT323", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: #000; color: var(--text); font-family: var(--f-body); overflow: hidden; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+#app { position: relative; width: min(100vw, 177.78vh); aspect-ratio: 16 / 9; container-type: inline-size; overflow: hidden; background: var(--ink); user-select: none; -webkit-user-select: none; }
+#stage { position: absolute; inset: 0; }
+#scene { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#flash.on { animation: flash .6s; }
+#app.shake #stage { animation: shake .4s; }
+#app.fade #stage { animation: fadeblack 1.2s; }
+#app.hideui .hud, #app.hideui #dock { visibility: hidden; }
+
+.hud { position: absolute; top: 1.4cqw; left: 1.4cqw; right: 1.4cqw; display: flex; justify-content: space-between; align-items: flex-start; gap: 1cqw; flex-wrap: wrap; z-index: 2; }
+.where { font-size: max(12px, 1.6cqw); line-height: 1.2; background: rgba(22,19,28,.72); border-radius: 999px; padding: .45cqw 1.3cqw; display: flex; gap: .9cqw; align-items: baseline; }
+.where b { font-family: var(--f-pixel); font-weight: 400; font-size: 1.15em; }
+.where span { color: var(--muted); }
+.where i { font-style: normal; color: var(--accent); font-family: var(--f-display); }
+.tools { display: flex; gap: .5cqw; flex-wrap: wrap; justify-content: flex-end; }
+.tool { font-size: max(12px, 1.5cqw); line-height: 1.2; background: rgba(22,19,28,.72); border: 0; border-radius: 999px; padding: .4cqw 1.1cqw; }
+.tool[aria-pressed="true"] { background: var(--accent); color: var(--ink); }
+.tool:focus-visible, .btn:focus-visible, .cell:focus-visible, .choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#dock { position: absolute; left: 3cqw; right: 3cqw; bottom: 1.8cqw; display: flex; flex-direction: column; gap: 1cqw; z-index: 2; }
+#box { position: relative; background: linear-gradient(rgba(31,29,43,.9), rgba(22,19,28,.94)); border: 2px solid rgba(255,255,255,.16); border-radius: 1.4cqw; padding: 2cqw 2.6cqw 1.8cqw; min-height: 11cqw; box-shadow: 0 .6cqw 2cqw rgba(0,0,0,.4); }
+#name { position: absolute; top: 0; left: 2.2cqw; transform: translateY(-58%); background: var(--accent); color: var(--ink); font-family: var(--f-display); font-weight: 700; font-size: max(13px, 1.8cqw); padding: .3cqw 1.6cqw; border-radius: 999px; box-shadow: 0 .3cqw .8cqw rgba(0,0,0,.35); }
+#txt { font-size: max(15px, 2.15cqw); line-height: 1.7; min-height: 3.4em; }
+#box.narr #txt { color: var(--soft); }
+#next { position: absolute; right: 1.8cqw; bottom: 1cqw; color: var(--accent); animation: bob 1s ease-in-out infinite; font-size: max(12px, 1.4cqw); }
+/* 选项放在画面上部（HUD 下面），避开立绘脸部所在的 41%–56% 高度 */
+#choices { position: absolute; top: 6.5cqw; left: 50%; transform: translateX(-50%); width: min(62%, 100%); display: grid; gap: .9cqw; z-index: 3; }
+.choice { position: relative; text-align: center; background: rgba(247,244,238,.94); color: var(--ink); border: 0; border-radius: 999px; padding: 1cqw 3cqw; font-size: max(14px, 1.9cqw); line-height: 1.45; box-shadow: 0 .4cqw 1.2cqw rgba(0,0,0,.35); transition: transform .12s, background .12s; }
+.choice::before { content: attr(data-k); position: absolute; left: 1.6cqw; top: 50%; transform: translateY(-50%); font-family: var(--f-pixel); color: var(--accent); }
+.choice:hover, .choice:focus-visible { background: var(--accent); transform: scale(1.02); outline: none; }
+.choice.clue { box-shadow: 0 0 0 2px var(--clue), 0 .4cqw 1.2cqw rgba(0,0,0,.35); }
+.fuse-label { text-align: center; color: var(--warn); font-size: max(12px, 1.6cqw); letter-spacing: .1em; }
+.fuse { height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; }
+.fuse span { display: block; height: 100%; background: var(--warn); animation: fuse linear forwards; border-radius: 2px; }
+
+#toast { position: absolute; top: 6cqw; left: 50%; transform: translate(-50%, -8px); opacity: 0; transition: opacity .3s, transform .3s; background: rgba(22,19,28,.92); border-radius: 999px; padding: .6cqw 1.8cqw; font-size: max(13px, 1.6cqw); z-index: 6; pointer-events: none; white-space: nowrap; }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+#toast small { color: var(--accent); margin-right: .8cqw; font-size: 1em; }
+#card { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(16,14,22,.9); z-index: 4; animation: fadein .5s; }
+#card h3 { font-family: var(--f-display); font-size: max(24px, 4.4cqw); margin: 0; letter-spacing: .08em; }
+#card p { color: var(--accent); letter-spacing: .2em; font-size: max(14px, 2cqw); margin: 1cqw 0 0; }
+
+.ov { position: absolute; inset: 0; background: rgba(16,14,22,.95); padding: 4.5cqw 6cqw; overflow: auto; z-index: 5; }
+.ov h2 { font-family: var(--f-display); font-size: max(20px, 3.2cqw); margin: 0 0 1cqw; }
+.eyebrow { color: var(--accent); letter-spacing: .18em; font-size: max(12px, 1.6cqw); margin: 0; }
+.lede { color: var(--muted); font-size: max(13px, 1.6cqw); line-height: 1.6; margin: .6cqw 0; }
+.row { display: flex; gap: 1cqw; flex-wrap: wrap; margin-top: 2cqw; }
+.btn { background: rgba(255,255,255,.08); border: 0; border-radius: 999px; padding: .9cqw 2.4cqw; font-size: max(14px, 1.8cqw); }
+.btn.primary { background: var(--accent); color: var(--ink); font-weight: 700; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 1.2cqw; }
+.cell { text-align: left; background: rgba(255,255,255,.06); border: 0; border-radius: 1.2cqw; padding: 1.2cqw 1.4cqw; display: grid; gap: .4cqw; font-size: max(13px, 1.6cqw); }
+.cell b { font-family: var(--f-display); font-weight: 600; font-size: 1.1em; }
+.cell span { color: var(--muted); line-height: 1.5; }
+.cell i { font-style: normal; color: var(--accent); font-size: .9em; }
+.cell canvas { width: 100%; aspect-ratio: 16 / 9; image-rendering: pixelated; border-radius: .6cqw; background: #000; }
+.cell:disabled { opacity: .45; cursor: default; }
+#title { background: linear-gradient(rgba(16,14,22,0) 35%, rgba(16,14,22,.88) 78%); display: flex; flex-direction: column; justify-content: flex-end; }
+#title h1 { font-family: var(--f-display); font-size: max(30px, 6.2cqw); margin: .3cqw 0; letter-spacing: .08em; text-shadow: 0 .4cqw 1.6cqw rgba(0,0,0,.5); }
+.group { color: var(--muted); margin: 2cqw 0 .8cqw; letter-spacing: .1em; font-size: max(13px, 1.6cqw); }
+.note { background: rgba(255,255,255,.06); border-radius: 1cqw; padding: 1cqw 1.4cqw; margin-bottom: .8cqw; font-size: max(13px, 1.6cqw); }
+.note b { color: var(--accent); font-weight: 500; }
+.note p { margin: .3cqw 0 0; color: var(--soft); line-height: 1.6; }
+.note.unk { color: var(--muted); }
+#logList p { margin: .6cqw 0; line-height: 1.6; font-size: max(13px, 1.6cqw); }
+#logList b { color: var(--accent); margin-right: .8em; font-weight: 500; }
+#logList p.n { color: #c7c1d6; }
+#cgBig { width: 100%; max-height: 70%; aspect-ratio: 16 / 9; image-rendering: pixelated; border-radius: 1cqw; }
+
+@keyframes shake { 0%, 100% { transform: none } 25% { transform: translate(-1cqw, .4cqw) } 50% { transform: translate(1cqw, -.4cqw) } 75% { transform: translate(-.5cqw, 0) } }
+@keyframes flash { from { opacity: .9 } to { opacity: 0 } }
+@keyframes fadeblack { from { filter: brightness(0) } to { filter: none } }
+@keyframes fadein { from { opacity: 0 } }
+@keyframes bob { 50% { transform: translateY(3px) } }
+@keyframes fuse { from { width: 100% } to { width: 0 } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* 竖屏：画面在上，对话框和选项在下面单独一块，字号按屏宽放大 */
+@media (max-aspect-ratio: 1/1) {
+  body { display: block; }
+  #app { width: 100vw; height: 100vh; height: 100dvh; aspect-ratio: auto; display: flex; flex-direction: column; }
+  #stage { position: relative; inset: auto; width: 100%; aspect-ratio: 16 / 9; flex: none; }
+  #dock { position: relative; left: auto; right: auto; bottom: auto; flex: none; padding: 6cqw 4cqw 2cqw; }
+  #box { min-height: 30cqw; padding: 5cqw 4.5cqw 5cqw; border-radius: 3cqw; }
+  #name { font-size: 3.8cqw; left: 4cqw; }
+  #txt { font-size: max(15px, 4.3cqw); }
+  #choices { position: relative; top: auto; left: auto; transform: none; width: auto; padding: 2cqw 4cqw 4cqw; gap: 2.4cqw; align-content: start; overflow: auto; flex: 1; }
+  .choice { font-size: max(14px, 4cqw); padding: 2.6cqw 6cqw; }
+  .hud { top: 2cqw; left: 2cqw; right: 2cqw; }
+  .where, .tool { font-size: max(11px, 3cqw); }
+  .ov { padding: 8cqw 6cqw; }
+  .lede, .cell, .note, #logList p, .group { font-size: max(13px, 3.6cqw); }
+  .btn { font-size: max(14px, 4cqw); padding: 2cqw 4.5cqw; }
+  #toast { top: 60cqw; font-size: max(13px, 3.6cqw); }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="scene" width="480" height="270" aria-label="游戏画面"></canvas>
+    <div id="flash"></div>
+    <div class="hud" id="hud" hidden>
+      <div class="where"><b id="hTime"></b><span id="hPlace"></span><i id="hCh"></i></div>
+      <div class="tools">
+        <button class="tool" id="bClues" type="button" hidden>线索 <span id="nClues">0</span></button>
+        <button class="tool" id="bLog" type="button">记录</button>
+        <button class="tool" id="bAuto" type="button" aria-pressed="false">自动</button>
+        <button class="tool" id="bSkip" type="button" aria-pressed="false">快进</button>
+        <button class="tool" id="bSave" type="button">存档</button>
+        <button class="tool" id="bHide" type="button">隐藏</button>
+        <button class="tool" id="bMute" type="button" aria-pressed="false">静音</button>
+        <button class="tool" id="bMenu" type="button">菜单</button>
+      </div>
+    </div>
+  </div>
+  <div id="dock">
+    <div id="box" hidden><div id="name"></div><div id="txt"></div><span id="next">▼</span></div>
+  </div>
+  <div id="choices" hidden></div>
+  <div id="toast"><small id="toastIcon">♥</small><span id="toastText"></span></div>
+  <div id="card" hidden><h3 id="cardH"></h3><p id="cardP"></p></div>
+
+  <div class="ov" id="title">
+    <p class="eyebrow" id="tEyebrow"></p>
+    <h1 id="tName"></h1>
+    <p class="lede" id="tSub"></p>
+    <div class="row">
+      <button class="btn primary" id="bNew" type="button">新游戏</button>
+      <button class="btn" id="bCont" type="button" hidden>继续</button>
+      <button class="btn" id="bLoad" type="button">读档</button>
+      <button class="btn" id="bChap" type="button">章节</button>
+      <button class="btn" id="bGallery" type="button">回想</button>
+    </div>
+  </div>
+  <div class="ov" id="notes" hidden><h2>线索</h2><div id="notesList"></div><div class="row"><button class="btn primary" type="button" data-close>返回</button></div></div>
+  <div class="ov" id="logOv" hidden><h2>记录</h2><div id="logList"></div><div class="row"><button class="btn primary" type="button" data-close>返回</button></div></div>
+  <div class="ov" id="slotOv" hidden><h2 id="slotTitle">存档</h2><p class="lede">进度也会自动保存，「继续」读的是自动存档。</p><div class="grid" id="slotGrid"></div><div class="row"><button class="btn" type="button" data-close>返回</button></div></div>
+  <div class="ov" id="chapOv" hidden><h2>章节</h2><p class="lede">玩过的章节可以重玩，好感和线索保留。</p><div class="grid" id="chapGrid"></div><div class="row"><button class="btn" type="button" data-close>返回</button></div></div>
+  <div class="ov" id="galOv" hidden>
+    <h2>回想</h2><p class="lede" id="galCount"></p><div class="grid" id="cgGrid"></div>
+    <h2 style="margin-top:3cqw">结局</h2><div class="grid" id="endGrid"></div>
+    <div class="row"><button class="btn" type="button" data-close>返回</button></div>
+  </div>
+  <div class="ov" id="cgOv" hidden><canvas id="cgBig" width="480" height="270"></canvas><div class="row"><button class="btn primary" type="button" data-close>返回</button></div></div>
+  <div class="ov" id="menuOv" hidden>
+    <h2>菜单</h2>
+    <div class="row">
+      <button class="btn primary" type="button" data-close>继续</button>
+      <button class="btn" id="bMenuLoad" type="button">读档</button>
+      <button class="btn" id="bMenuChap" type="button">章节</button>
+      <button class="btn" id="bMenuTitle" type="button">回到标题</button>
+    </div>
+    <p class="lede">快捷键：空格 / 回车继续，数字键选选项，按住 Ctrl 快进，H 隐藏界面，Esc 菜单。</p>
+  </div>
+  <div class="ov" id="hub" hidden><h2 id="hubTitle"></h2><p class="lede">这几章顺序自选，都完成后继续。</p><div class="grid" id="hubGrid"></div></div>
+  <div class="ov" id="ending" hidden>
+    <p class="eyebrow" id="endTag"></p>
+    <h2 id="endName"></h2>
+    <p class="lede" id="endDesc"></p>
+    <p class="lede" id="endLeft"></p>
+    <div class="row">
+      <button class="btn primary" id="bReplay" type="button">重玩这一章</button>
+      <button class="btn" id="bToTitle" type="button">回到标题</button>
+    </div>
+  </div>
+</div>
+
+<script src="pixel_art.js"></script>
+<script src="music.js"></script>
+<script src="story/registry.js"></script>
+<script>
+  window.STORY = { chapters: {}, chapter(c) { this.chapters[c.id] = c; } };
+  window.VOICE = {};
+</script>
+<script src="story/ch1.js"></script>
+<script src="audio/voice/manifest.js" onerror="void 0"></script>
+<script>
+"use strict";
+/* 游戏引擎（galforge 通用骨架 · galgame 版）：只读 registry 和 STORY.chapter 的数据，剧情不写进代码。
+ * tools/playtest.js 依赖：#bNew #choices(._vis) #ending #hub #hubGrid、全局 choose() advance() go()、本脚本里的 S / meta / function boot
+ * 动画（眨眼、口型、呼吸、进退场、表情符号）都在画面循环里按时间算，不开定时器
+ */
+const A = window.PixelArt, R = window.REG, CH = STORY.chapters;
+const $ = id => document.getElementById(id);
+const arr = v => (v == null ? [] : Array.isArray(v) ? v : [v]);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const CN = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+const now = () => performance.now();
+const NODES = {}; for (const c of Object.values(CH)) for (const [id, n] of Object.entries(c.nodes)) NODES[id] = Object.assign({ _ch: c.id }, n);
+const FLOW = R.FLOW || Object.keys(R.CHAPTERS);
+const NS = "vg:" + ((R.TITLE && R.TITLE.name) || "game") + ":"; // 存档按游戏名分开
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(NS + k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(NS + k, JSON.stringify(v)); } catch (e) {} },
+};
+const vars0 = () => Object.fromEntries(Object.entries(R.VARS || {}).map(([k, v]) => [k, v.init || 0]));
+const fresh = () => ({ ch: null, node: null, line: 0, done: [], clues: [], flags: [], gflags: [], vars: vars0(), time: "", tod: (R.TITLE && R.TITLE.tod) || "day",
+  scene: (R.TITLE && R.TITLE.scene) || "black", weather: "clear", props: {}, stage: {}, wear: {}, pose: {}, speaker: null, red: false, log: [] });
+let S = fresh(), meta = Object.assign({ endings: [], seen: [], cgs: [], read: [] }, store.get("meta"));
+let auto = false, skip = false, typing = null, full = "", lineKey = "", autoT = null, choiceT = null, cardT = null, cardThen = null, skipT = null;
+const voice = new Audio();
+const FXS = {}, leaving = []; // 表现层（不存档）：每个角色的进场时间、眨眼、蹦、表情符号；退场中的角色
+const fxOf = id => (FXS[id] = FXS[id] || { born: 0, blinkAt: 0, act: null, actAt: -1e9, poseFrom: null, poseAt: -1e9, emote: null, emoteAt: -1e9 });
+
+/* ---------- 条件：线索 / flag / 好感比较 ---------- */
+const CMP = /^([A-Za-z_]\w*)\s*(>=|<=|==|!=|>|<)\s*([A-Za-z_]\w*|-?\d+)$/;
+const val = x => (/^-?\d+$/.test(x) ? +x : S.vars[x] || 0);
+function test(k) {
+  const m = CMP.exec(k);
+  if (m) { const a = val(m[1]), b = val(m[3]); return { ">=": a >= b, "<=": a <= b, "==": a === b, "!=": a !== b, ">": a > b, "<": a < b }[m[2]]; }
+  return S.clues.includes(k) || S.flags.includes(k) || S.gflags.includes(k);
+}
+const okNeed = o => arr(o.need).every(test) && !arr(o.needNot).some(test);
+const save = () => store.set("save", S);
+const saveMeta = () => store.set("meta", meta);
+const canResume = sv => !!(sv && sv.node && !/^__(ending|finished)/.test(sv.node));
+function addFlag(k) { const list = k.startsWith("g_") ? S.gflags : S.flags; if (!list.includes(k)) list.push(k); }
+function addClue(k) { if (!R.CLUES[k] || S.clues.includes(k)) return; S.clues.push(k); $("nClues").textContent = S.clues.length; toast(R.CLUES[k].name, "线索"); }
+function addVars(add) {
+  for (const [k, v] of Object.entries(add || {})) {
+    S.vars[k] = (S.vars[k] || 0) + v;
+    if (v > 0 && R.SHOW_AFFECTION && R.VARS[k]) toast(R.VARS[k].name, "♥");
+  }
+}
+function effects(o) { arr(o.clue).forEach(addClue); arr(o.set).forEach(addFlag); addVars(o.add); }
+
+/* ---------- 舞台：谁站在哪、什么表情、穿什么、什么姿势 ---------- */
+// 站位写法 "角色[:表情][@服装][#姿势]"
+const parseSpec = sp => { const m = /^([^:@#]+)(?::([^@#]+))?(?:@([^#]+))?(?:#(.+))?$/.exec(sp); return { id: m[1], ex: m[2], outfit: m[3], pose: m[4] }; };
+// 换姿势：记下从哪个姿势来、什么时候开始换，画的时候手臂在 260 毫秒里走过去
+function setPose(id, p) { const cur = S.pose[id] || "rest"; if (cur === p) return; const f = fxOf(id); f.poseFrom = cur; f.poseAt = now(); S.pose[id] = p; }
+const doAct = (id, a) => { const f = fxOf(id); f.act = a; f.actAt = now(); };
+function setStage(st) {
+  const next = {}, t = now();
+  for (const [pos, sp] of Object.entries(st || {})) {
+    const p = parseSpec(sp), old = Object.values(S.stage).find(c => c.id === p.id);
+    if (p.outfit) S.wear[p.id] = p.outfit;
+    if (p.pose) { if (old) setPose(p.id, p.pose); else S.pose[p.id] = p.pose; } // 刚上场的人直接摆好，不从垂手过渡
+    else if (!old) S.pose[p.id] = "rest";
+    next[pos] = { id: p.id, ex: p.ex || (old ? old.ex : "neutral") };
+  }
+  for (const [pos, c] of Object.entries(S.stage)) if (!Object.values(next).some(n => n.id === c.id)) leaving.push({ c: Object.assign({}, c), pos, at: t });
+  for (const c of Object.values(next)) if (!Object.values(S.stage).some(o => o.id === c.id)) fxOf(c.id).born = t;
+  S.stage = next;
+}
+function speak(who, ex, opt) {
+  const sp = R.SPEAKERS[who] || {};
+  let pid = sp.portrait; if (typeof pid === "function") pid = pid(S.time);
+  if (!pid || opt.off || /^cg_/.test(S.scene)) { S.speaker = null; return; } // 旁白、画外音、CG 时不压暗任何人
+  let pos = Object.keys(S.stage).find(k => S.stage[k].id === pid);
+  if (!pos) { // 说话的人不在台上：自动站到空位
+    pos = ["c", "r", "l"].find(k => !S.stage[k]) || "c";
+    const st = Object.fromEntries(Object.entries(S.stage).map(([k, c]) => [k, c.id + ":" + c.ex])); st[pos] = pid; setStage(st);
+  }
+  if (ex) S.stage[pos].ex = ex;
+  if (opt.outfit) S.wear[pid] = opt.outfit;
+  S.speaker = pid;
+  const f = fxOf(pid);
+  if (opt.emote) { f.emote = opt.emote; f.emoteAt = now(); Music.sfx("pop"); }
+  if (opt.pose) setPose(pid, opt.pose);
+  doAct(pid, opt.act || (opt.jump ? "jump" : "bob")); // 没写动作时，开口那一下头轻点一下
+}
+
+/* ---------- 章节流程（registry.FLOW + 章末跳转） ---------- */
+function nextChapter() {
+  for (const st of FLOW) {
+    if (typeof st === "string") { if (!S.done.includes(st)) return st; }
+    else if (st.pick.some(id => !S.done.includes(id))) return { hub: st };
+  }
+  return null;
+}
+const chapterNo = id => (S.done.includes(id) ? S.done.indexOf(id) + 1 : S.done.length + 1); // 第几章：按这一周目实际玩的顺序
+function startChapter(id, retry) {
+  const c = CH[id]; if (!c) { console.error("missing chapter", id); return; }
+  hideAll(); $("hud").hidden = false;
+  S.ch = id; S.flags = []; S.red = false; S.speaker = null; S.stage = {}; S.props = {}; S.pose = {}; leaving.length = 0;
+  if (!meta.seen.includes(id)) { meta.seen.push(id); saveMeta(); }
+  const no = chapterNo(id), label = (R.CHAPTERS[id] || {}).label || `第${CN[no] || no}章`;
+  go(c.start, retry ? { card: ["再来一次", `《${c.title}》`], retry: true } : { card: [label, `《${c.title}》`] });
+}
+function endChapter(n) {
+  const e = n.end; stopVoice();
+  if (e.type === "retry" || (e.type === "loop" && e.retry)) { setTimeout(() => startChapter(S.ch, true), 300); return; }
+  if (!S.done.includes(S.ch)) S.done.push(S.ch);
+  save();
+  const nx = e.id || nextChapter();
+  setTimeout(() => (!nx ? showEnding(null) : nx.hub ? showHub(nx.hub) : startChapter(nx)), 300);
+}
+function showHub(st) {
+  hideAll(); $("hud").hidden = true; $("box").hidden = true; hideChoices();
+  Music.play(st.bgm || "t4"); S.scene = st.scene || S.scene; S.stage = {};
+  $("hubTitle").textContent = st.title || "接下来，先去哪？";
+  const g = $("hubGrid"); g.innerHTML = "";
+  for (const id of st.pick) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "cell"; b.disabled = S.done.includes(id);
+    b.innerHTML = `<b>《${esc(CH[id].title)}》</b><span>${esc((st.desc || {})[id] || "")}</span>${b.disabled ? "<i>已完成</i>" : ""}`;
+    b.onclick = e => { e.stopPropagation(); $("hub").hidden = true; startChapter(id); };
+    g.append(b);
+  }
+  $("hub").hidden = false; S.node = "__hub"; save();
+}
+
+/* ---------- 节点 ---------- */
+function go(id, opt = {}) {
+  const n = NODES[id]; if (!n) { console.error("missing node", id); return; }
+  clearTimeout(autoT); hideChoices(); stopVoice();
+  S.node = id; S.line = opt.line || 0;
+  if (n.scene && n.scene !== S.scene) { S.scene = n.scene; if (/^cg_/.test(n.scene) && !meta.cgs.includes(n.scene)) { meta.cgs.push(n.scene); saveMeta(); } }
+  if (n.tod) S.tod = n.tod;
+  if (n.weather) S.weather = n.weather;
+  if (n.props) S.props = Object.assign({}, S.props, n.props); // 场景里能开关的东西（灯、门……），沿用到下次改
+  if (n.time) S.time = n.time;
+  if (n.stage) setStage(n.stage);
+  if (n.bgm) Music.play(n.bgm);
+  if (!opt.resume) { if (n.sfx) Music.sfx(n.sfx); if (n.fx) fx(n.fx); effects(n); } // 读档 / 继续时不重复加好感
+  hud(); save();
+  // 重来用「再来一次」；正常开章时，章首节点自己写了 title 就用它，否则用引擎的「第 N 章」
+  const card = opt.resume ? null : opt.retry ? opt.card : n.title ? arr(n.title) : opt.card;
+  if (card) showCard(card, step); else step();
+}
+function step() {
+  const n = NODES[S.node], L = n.lines || [];
+  if (S.line < L.length) return showLine(n, S.line);
+  if (!meta.read.includes(S.node)) { meta.read.push(S.node); saveMeta(); }
+  if (n.next) return go(n.next);
+  if (n.choices) return showChoices(n);
+  if (n.branch) return go((n.branch.find(okNeed) || n.branch[n.branch.length - 1]).next);
+  if (n.end) return n.end.type === "ending" ? showEnding(n.end.id) : endChapter(n);
+}
+// 台词第 4 项：省略 / "off"（画外音）/ 表情符号名 / { off, emote, pose, act, who, jump, sfx, outfit, weather, props, stage }
+function lineOpt(o) { return o == null ? {} : o === "off" ? { off: true } : typeof o === "string" ? { emote: o } : o; }
+function showLine(n, i) {
+  const [who, text, ex, o] = n.lines[i], opt = lineOpt(o), sp = R.SPEAKERS[who] || { name: who };
+  if (opt.stage) setStage(opt.stage); // 节点中间有人进场、离场
+  speak(who, ex, opt);
+  if (opt.who && S.pose) { if (opt.pose) setPose(opt.who, opt.pose); if (opt.act) doAct(opt.who, opt.act); } // 旁白写某人的动作：who = 谁在动（不会变成说话人）
+  if (opt.sfx) Music.sfx(opt.sfx);
+  if (opt.weather) S.weather = opt.weather; // 节点中间变天、关灯
+  if (opt.props) S.props = Object.assign({}, S.props, opt.props);
+  $("box").hidden = false; $("box").classList.toggle("narr", !sp.name);
+  $("name").textContent = sp.name || ""; $("name").hidden = !sp.name; $("name").style.background = sp.color || "";
+  S.log.push([sp.name || "", text]); if (S.log.length > 300) S.log.shift();
+  lineKey = `${S.node}_${i}`;
+  stopVoice();
+  if (sp.voice && window.VOICE[lineKey] != null && !Music.muted) { voice.src = `audio/voice/${lineKey}.mp3`; const p = voice.play(); if (p && p.catch) p.catch(() => {}); }
+  typeText(text);
+}
+function typeText(text) {
+  full = text; const chars = [...text], el = $("txt"); let k = 0; el.textContent = ""; $("next").hidden = true;
+  const tick = () => { k++; el.textContent = chars.slice(0, k).join(""); if (k < chars.length) typing = setTimeout(tick, 28); else { typing = null; lineDone(); } };
+  typing = setTimeout(tick, 28);
+}
+function lineDone() {
+  $("next").hidden = false;
+  if (auto && !skip) { const ms = Math.max(1600, (window.VOICE[lineKey] || 0) * 1000 + 700, [...full].length * 110 + 900); autoT = setTimeout(() => advance(true), ms); }
+}
+function stopVoice() { try { voice.pause(); } catch (e) {} }
+function advance(fromAuto) {
+  if (anyOverlay() || !$("choices").hidden) return;
+  if (!$("card").hidden) return skipCard();
+  if (typing) { clearTimeout(typing); typing = null; $("txt").textContent = full; lineDone(); return; }
+  if (!NODES[S.node]) return;
+  clearTimeout(autoT); S.line++; step();
+}
+function showChoices(n) {
+  const vis = n.choices.filter(okNeed), box = $("choices");
+  box.innerHTML = ""; setSkip(false);
+  if (!vis.length) console.error("no visible choice at", S.node);
+  if (n.timer) {
+    const lab = document.createElement("div"); lab.className = "fuse-label"; lab.textContent = `限时 ${n.timer} 秒`;
+    const f = document.createElement("div"); f.className = "fuse"; f.innerHTML = `<span style="animation-duration:${n.timer}s"></span>`;
+    box.append(lab, f);
+    choiceT = setTimeout(() => choose(vis[0]), n.timer * 1000);
+  }
+  vis.forEach((c, i) => {
+    const b = document.createElement("button"); b.type = "button";
+    b.className = "choice" + (arr(c.need).some(k => R.CLUES[k]) ? " clue" : "");
+    b.dataset.k = String(i + 1); b.textContent = c.t;
+    b.onclick = e => { e.stopPropagation(); choose(c); };
+    box.append(b);
+  });
+  box._vis = vis; box.hidden = false;
+}
+function hideChoices() { clearTimeout(choiceT); $("choices").hidden = true; }
+function choose(c) {
+  hideChoices();
+  effects(c);
+  S.log.push(["→", c.t]);
+  go(c.next);
+}
+function fx(kind) {
+  const app = $("app");
+  if (kind === "red") S.red = true;
+  if (kind === "flash") { const f = $("flash"); f.classList.remove("on"); void f.offsetWidth; f.classList.add("on"); }
+  if (kind === "shake" || kind === "fade") { app.classList.remove(kind); void app.offsetWidth; app.classList.add(kind); setTimeout(() => app.classList.remove(kind), 1200); }
+}
+
+/* ---------- 快进：只快进读过的节点 ---------- */
+function setSkip(on) { skip = !!on; $("bSkip").setAttribute("aria-pressed", skip); clearTimeout(skipT); if (skip) skipT = setTimeout(skipTick, 40); }
+function skipTick() {
+  if (!skip) return;
+  if (anyOverlay() || !$("choices").hidden || !NODES[S.node] || !meta.read.includes(S.node)) return setSkip(false);
+  advance(true); skipT = setTimeout(skipTick, 40);
+}
+
+/* ---------- 画面：每帧按时间算眨眼、口型、进退场、蹦、表情符号 ---------- */
+const cv = $("scene"), reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let lastDraw = 0;
+function charFrame(c, pos, t) {
+  const f = fxOf(c.id);
+  if (!f.blinkAt) f.blinkAt = t + 800 + Math.random() * 3000;
+  let blink = 0; const bt = t - f.blinkAt;
+  if (bt >= 0) { blink = bt < 60 ? 1 : bt < 150 ? 2 : bt < 210 ? 1 : 0; if (bt >= 210) f.blinkAt = t + 2200 + Math.random() * 3600; }
+  const et = (t - f.emoteAt) / 1000;
+  if (f.exCur !== c.ex) { f.exFrom = f.exCur || c.ex; f.exAt = t; f.exCur = c.ex; } // 换表情的时刻：头的倾斜从旧表情过渡到新表情
+  const speaking = !!(typing && S.speaker === c.id);
+  return { id: c.id, pos, ex: c.ex, exFrom: f.exFrom, exT: t - (f.exAt || 0), speaking, outfit: S.wear[c.id], blink, talk: speaking ? Math.floor(t / 90) % 2 : 0,
+    pose: S.pose[c.id] || "rest", poseFrom: f.poseFrom, poseK: Math.min(1, (t - f.poseAt) / 260), act: f.act, actT: t - f.actAt,
+    alpha: Math.min(1, (t - f.born) / 260),
+    dim: S.speaker && S.speaker !== c.id ? 0.35 : 0, emote: et < 1.6 ? f.emote : null, emoteT: et };
+}
+function draw(t) {
+  const cg = /^cg_/.test(S.scene), chars = [];
+  if (!cg) {
+    for (const [pos, c] of Object.entries(S.stage)) chars.push(charFrame(c, pos, t));
+    for (const L of leaving) { const a = 1 - (t - L.at) / 260; if (a > 0) chars.push(Object.assign(charFrame(L.c, L.pos, t), { alpha: a, talk: 0, dim: 0.35 })); }
+    while (leaving.length && t - leaving[0].at > 300) leaving.shift();
+  }
+  A.frame(A.SCENES[S.scene] ? S.scene : "black", t / 1000, { chars, tod: S.tod, weather: S.weather, props: S.props, red: S.red }).toCanvas(cv);
+}
+function loop(t) { if (t - lastDraw > (reduce ? 400 : 66)) { lastDraw = t; draw(t); } requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+function hud() {
+  $("hTime").textContent = S.time || "";
+  $("hPlace").textContent = /^(black|white|cg_)/.test(S.scene) ? "" : R.SCENES[S.scene] || "";
+  $("hCh").textContent = CH[S.ch] ? `《${CH[S.ch].title}》` : "";
+  $("nClues").textContent = S.clues.length;
+}
+function showCard([h, p], then) {
+  $("cardH").textContent = h || ""; $("cardP").textContent = p || ""; $("card").hidden = false;
+  cardThen = then; clearTimeout(cardT); cardT = setTimeout(skipCard, 1900);
+}
+function skipCard() { clearTimeout(cardT); $("card").hidden = true; const f = cardThen; cardThen = null; if (f) f(); }
+function toast(text, icon) { $("toastText").textContent = text; $("toastIcon").textContent = icon || ""; const t = $("toast"); t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 2200); }
+
+/* ---------- 结局与浮层 ---------- */
+function showEnding(id) {
+  stopVoice(); hideChoices(); setSkip(false); $("box").hidden = true;
+  const e = id ? R.ENDINGS[id] : { name: "全部章节完成", desc: "" };
+  if (id && !meta.endings.includes(id)) { meta.endings.push(id); saveMeta(); }
+  $("endTag").textContent = id ? `结局 ${id}` : "完";
+  $("endName").textContent = e.name; $("endDesc").textContent = e.desc;
+  const left = Object.keys(R.ENDINGS).filter(k => !meta.endings.includes(k)).length;
+  $("endLeft").textContent = left ? `还有 ${left} 个结局没见过。` : "所有结局都见过了。";
+  hideAll(); $("ending").hidden = false; S.node = id ? "__ending" : "__finished"; save();
+}
+const OVS = ["title", "notes", "logOv", "slotOv", "chapOv", "galOv", "cgOv", "menuOv", "hub", "ending"];
+const anyOverlay = () => OVS.some(id => !$(id).hidden);
+function hideAll() { OVS.forEach(id => ($(id).hidden = true)); }
+function openOv(id) { setSkip(false); $(id).hidden = false; }
+function renderNotes() {
+  let html = "";
+  const byCh = {}; for (const [k, c] of Object.entries(R.CLUES)) (byCh[c.ch] = byCh[c.ch] || []).push([k, c]);
+  for (const [ch, list] of Object.entries(byCh)) {
+    if (!meta.seen.includes("ch" + ch) && !list.some(([k]) => S.clues.includes(k))) continue;
+    html += `<div class="group">第${CN[ch] || ch}章</div>`;
+    for (const [k, c] of list) html += S.clues.includes(k) ? `<div class="note"><b>${esc(c.name)}</b><p>${esc(c.desc)}</p></div>` : `<div class="note unk">？？？</div>`;
+  }
+  $("notesList").innerHTML = html || `<p class="lede">还没有线索。</p>`;
+}
+function renderLog() { $("logList").innerHTML = S.log.slice(-150).map(([w, t]) => `<p class="${w ? "" : "n"}">${w ? `<b>${esc(w)}</b>` : ""}${esc(t)}</p>`).join(""); }
+function renderChapters() {
+  const g = $("chapGrid"); g.innerHTML = "";
+  for (const id of Object.keys(R.CHAPTERS)) {
+    if (!CH[id]) continue;
+    const open = meta.seen.includes(id), b = document.createElement("button"); b.type = "button"; b.className = "cell"; b.disabled = !open;
+    b.innerHTML = `<i>${open ? "已解锁" : "未解锁"}</i><b>${open ? `《${esc(CH[id].title)}》` : "？？？"}</b>`;
+    b.onclick = e => { e.stopPropagation(); startChapter(id); };
+    g.append(b);
+  }
+}
+function renderGallery() {
+  const cgs = Object.keys(R.SCENES).filter(k => /^cg_/.test(k)), ends = Object.keys(R.ENDINGS);
+  $("galCount").textContent = `CG ${cgs.filter(k => meta.cgs.includes(k)).length} / ${cgs.length} · 结局 ${ends.filter(k => meta.endings.includes(k)).length} / ${ends.length}`;
+  const g = $("cgGrid"); g.innerHTML = "";
+  for (const k of cgs) {
+    const got = meta.cgs.includes(k), b = document.createElement("button"); b.type = "button"; b.className = "cell"; b.disabled = !got;
+    const c = document.createElement("canvas"); c.width = 480; c.height = 270;
+    if (got) A.frame(k, 1, {}).toCanvas(c);
+    b.append(c); const cap = document.createElement("span"); cap.textContent = got ? R.SCENES[k] : "？？？"; b.append(cap);
+    b.onclick = e => { e.stopPropagation(); A.frame(k, 1, {}).toCanvas($("cgBig")); openOv("cgOv"); };
+    g.append(b);
+  }
+  if (!cgs.length) g.innerHTML = `<p class="lede">这个游戏没有 CG。</p>`;
+  const eg = $("endGrid"); eg.innerHTML = "";
+  for (const k of ends) {
+    const got = meta.endings.includes(k), d = document.createElement("div"); d.className = "cell";
+    d.innerHTML = `<i>${k}</i><b>${got ? esc(R.ENDINGS[k].name) : "？？？"}</b><span>${got ? esc(R.ENDINGS[k].desc) : ""}</span>`;
+    eg.append(d);
+  }
+}
+const SLOTS = 6;
+function renderSlots(mode) {
+  $("slotTitle").textContent = mode === "save" ? "存档" : "读档";
+  const g = $("slotGrid"), slots = store.get("slots") || []; g.innerHTML = "";
+  for (let i = 0; i < SLOTS; i++) {
+    const s = slots[i], b = document.createElement("button"); b.type = "button"; b.className = "cell"; b.disabled = mode === "load" && !s;
+    b.innerHTML = s ? `<i>${i + 1} 号 · ${esc(new Date(s.at).toLocaleString("zh-CN", { hour12: false }))}</i><b>${esc(s.title || "")}</b><span>${esc(s.txt || "")}</span>` : `<i>${i + 1} 号</i><b>空</b>`;
+    b.onclick = e => {
+      e.stopPropagation();
+      if (mode === "save") { slots[i] = { at: Date.now(), title: CH[S.ch] ? CH[S.ch].title : "", txt: full.slice(0, 26), S: JSON.parse(JSON.stringify(S)) }; store.set("slots", slots); toast(`已存到 ${i + 1} 号位`, "存档"); renderSlots("save"); }
+      else loadState(s.S);
+    };
+    g.append(b);
+  }
+}
+function loadState(st) {
+  S = Object.assign(fresh(), st); hideAll(); Music.unlock(); leaving.length = 0;
+  for (const c of Object.values(S.stage)) fxOf(c.id).born = now() - 1000;
+  if (S.node === "__hub") { const nx = nextChapter(); if (nx && nx.hub) return showHub(nx.hub); }
+  if (NODES[S.node]) { $("hud").hidden = false; return go(S.node, { resume: true, line: Math.min(S.line, (NODES[S.node].lines || []).length) }); }
+  const nx = nextChapter(); if (nx) return nx.hub ? showHub(nx.hub) : startChapter(nx);
+  toTitle();
+}
+function toTitle() {
+  stopVoice(); hideAll(); hideChoices(); setSkip(false); $("box").hidden = true; $("hud").hidden = true;
+  S.scene = (R.TITLE && R.TITLE.scene) || S.scene; S.tod = (R.TITLE && R.TITLE.tod) || "day"; S.stage = {}; S.red = false;
+  $("bCont").hidden = !canResume(store.get("save")); $("title").hidden = false; Music.play("none");
+}
+
+/* ---------- 输入 ---------- */
+$("bNew").onclick = e => { if (e) e.stopPropagation(); Music.unlock(); S = fresh(); const nx = nextChapter(); if (nx) (nx.hub ? showHub(nx.hub) : startChapter(nx)); };
+$("bCont").onclick = e => { e.stopPropagation(); const sv = store.get("save"); if (sv) loadState(sv); };
+$("bLoad").onclick = e => { e.stopPropagation(); renderSlots("load"); openOv("slotOv"); };
+$("bChap").onclick = e => { e.stopPropagation(); renderChapters(); openOv("chapOv"); };
+$("bGallery").onclick = e => { e.stopPropagation(); renderGallery(); openOv("galOv"); };
+$("bClues").onclick = e => { e.stopPropagation(); renderNotes(); openOv("notes"); };
+$("bLog").onclick = e => { e.stopPropagation(); renderLog(); openOv("logOv"); };
+$("bSave").onclick = e => { e.stopPropagation(); renderSlots("save"); openOv("slotOv"); };
+$("bAuto").onclick = e => { e.stopPropagation(); auto = !auto; $("bAuto").setAttribute("aria-pressed", auto); if (auto && !typing && $("choices").hidden) lineDone(); else clearTimeout(autoT); };
+$("bSkip").onclick = e => { e.stopPropagation(); setSkip(!skip); };
+$("bHide").onclick = e => { e.stopPropagation(); $("app").classList.add("hideui"); };
+$("bMute").onclick = e => { e.stopPropagation(); Music.unlock(); Music.setMuted(!Music.muted); voice.muted = Music.muted; $("bMute").setAttribute("aria-pressed", Music.muted); };
+$("bMenu").onclick = e => { e.stopPropagation(); openOv("menuOv"); };
+$("bMenuLoad").onclick = e => { e.stopPropagation(); $("menuOv").hidden = true; renderSlots("load"); openOv("slotOv"); };
+$("bMenuChap").onclick = e => { e.stopPropagation(); $("menuOv").hidden = true; renderChapters(); openOv("chapOv"); };
+$("bMenuTitle").onclick = e => { e.stopPropagation(); toTitle(); };
+$("bToTitle").onclick = e => { e.stopPropagation(); toTitle(); };
+$("bReplay").onclick = e => { e.stopPropagation(); if (S.ch) startChapter(S.ch, true); };
+document.querySelectorAll("[data-close]").forEach(b => (b.onclick = e => { e.stopPropagation(); b.closest(".ov").hidden = true; }));
+$("app").onclick = e => {
+  if ($("app").classList.contains("hideui")) { $("app").classList.remove("hideui"); return; }
+  if (e.target.closest("button, .ov")) return; Music.unlock(); setSkip(false); advance();
+};
+window.addEventListener("keydown", e => {
+  if (e.key === "Control") { if (!skip && !anyOverlay()) setSkip(true); return; }
+  if ($("app").classList.contains("hideui")) { $("app").classList.remove("hideui"); return; }
+  if (e.key === " " || e.key === "Enter") { if (document.activeElement && document.activeElement.tagName === "BUTTON" && e.key === "Enter") return; e.preventDefault(); advance(); }
+  else if (/^[1-9]$/.test(e.key) && !$("choices").hidden) { const c = $("choices")._vis[+e.key - 1]; if (c) choose(c); }
+  else if (e.key === "h" || e.key === "H") { if (!$("hud").hidden && !anyOverlay()) $("app").classList.add("hideui"); }
+  else if (e.key === "Escape") { const open = OVS.filter(id => !["title", "hub", "ending"].includes(id) && !$(id).hidden); if (open.length) open.forEach(id => ($(id).hidden = true)); else if (!$("hud").hidden) openOv("menuOv"); }
+});
+window.addEventListener("keyup", e => { if (e.key === "Control") setSkip(false); });
+
+/* ---------- 启动 ---------- */
+(function boot() {
+  document.title = (R.TITLE && R.TITLE.name) || document.title;
+  $("tName").textContent = (R.TITLE && R.TITLE.name) || ""; $("tSub").textContent = (R.TITLE && R.TITLE.sub) || ""; $("tEyebrow").textContent = (R.TITLE && R.TITLE.eyebrow) || "";
+  $("bClues").hidden = !Object.keys(R.CLUES || {}).length;
+  const sv = store.get("save"); // 读进来：从标题页进「章节」重玩时好感和线索还在；「新游戏」会重置
+  if (sv) S = Object.assign(fresh(), sv, { scene: fresh().scene, tod: fresh().tod, stage: {}, red: false, speaker: null });
+  $("bCont").hidden = !canResume(sv);
+  const q = new URLSearchParams(location.search).get("ch");
+  if (q && CH[q]) { hideAll(); startChapter(q); }
+})();
+</script>
+</body>
+</html>

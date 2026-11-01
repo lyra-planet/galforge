@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>美术一览</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500&family=Noto+Serif+SC:wght@600&display=swap">
+<style>
+/* 美术一览：直接读 pixel_art.js，给用户确认角色、表情、服装、表情符号、场景和时段 */
+:root { --ink: #16131c; --line: #4a4660; --text: #f7f4ee; --muted: #9a97ab; --accent: #f08fb4;
+  --f-display: "Noto Serif SC", "Songti SC", serif; --f-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; color-scheme: dark; }
+body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--f-body); padding: 28px max(16px, 4vw) 64px; }
+h1 { font-family: var(--f-display); margin: 0 0 4px; font-size: 28px; }
+h2 { font-family: var(--f-display); font-size: 19px; margin: 32px 0 10px; }
+.lede { color: var(--muted); margin: 0; }
+canvas { image-rendering: pixelated; display: block; }
+#hero { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; border-radius: 10px; background: #000; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; align-items: center; }
+.bar span { color: var(--muted); font-size: 13px; margin-right: 4px; min-width: 3em; }
+.bar button { background: rgba(255,255,255,.08); color: var(--text); border: 0; border-radius: 999px; padding: 5px 12px; font: 13px var(--f-body); cursor: pointer; }
+.bar button[aria-pressed="true"] { background: var(--accent); color: var(--ink); }
+.faces { display: flex; gap: 8px; flex-wrap: wrap; }
+.faces figure { margin: 0; text-align: center; color: var(--muted); font-size: 12px; }
+.faces canvas { width: 112px; height: 180px; border-radius: 8px; background: #262433; }
+.scenes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.scenes figure { margin: 0; color: var(--muted); font-size: 13px; }
+.scenes canvas { width: 100%; aspect-ratio: 16 / 9; height: auto; border-radius: 8px; margin-bottom: 4px; }
+.pal { display: flex; flex-wrap: wrap; gap: 4px; }
+.pal span { width: 26px; height: 26px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1 id="h">美术一览</h1>
+<p class="lede">所有画面都由 pixel_art.js 的代码绘制。下面的大图是实时的：会眨眼、会呼吸、头会轻轻晃；点「姿势」看手臂怎么摆过去，点「一次性动作」看点头、摇头、鞠躬，按「说话」看口型。</p>
+<canvas id="hero" width="480" height="270"></canvas>
+<div class="bar" id="whoBar"><span>角色</span></div>
+<div class="bar" id="exBar"><span>表情</span></div>
+<div class="bar" id="outfitBar"><span>服装</span></div>
+<div class="bar" id="emoteBar"><span>符号</span></div>
+<div class="bar" id="poseBar"><span>姿势</span></div>
+<div class="bar" id="actBar"><span>一次性动作</span></div>
+<div class="bar" id="sceneBar"><span>场景</span></div>
+<div class="bar" id="todBar"><span>时段</span></div>
+<div class="bar"><span>其他</span><button type="button" id="bTalk" aria-pressed="false">说话</button><button type="button" id="bDuo" aria-pressed="false">两人同屏</button></div>
+<h2>角色 × 表情</h2>
+<div id="cast"></div>
+<h2>场景 × 时段</h2>
+<div class="scenes" id="scenes"></div>
+<h2>调色板</h2>
+<div class="pal" id="pal"></div>
+<script src="pixel_art.js"></script>
+<script src="story/registry.js" onerror="void 0"></script>
+<script>
+"use strict";
+const A = window.PixelArt, $ = id => document.getElementById(id);
+if (window.REG && REG.TITLE) { $("h").textContent = `《${REG.TITLE.name}》美术一览`; document.title = $("h").textContent; }
+const st = { who: A.CAST[0].id, ex: "neutral", outfit: null, emote: null, emoteAt: -1e9, scene: Object.keys(A.SCENES)[0], tod: "day", talk: false, duo: false, blinkAt: 0,
+  pose: "rest", poseFrom: null, poseAt: -1e9, act: null, actAt: -1e9 };
+function bar(id, items, key, label = x => x, after) {
+  const b = $(id);
+  for (const it of items) {
+    const btn = document.createElement("button"); btn.type = "button"; btn.textContent = label(it);
+    btn.onclick = () => { st[key] = it; [...b.querySelectorAll("button")].forEach(x => x.setAttribute("aria-pressed", x === btn)); if (after) after(it); };
+    btn.setAttribute("aria-pressed", st[key] === it); b.append(btn);
+  }
+}
+bar("whoBar", A.CAST.map(c => c.id), "who", id => A.castById[id].name, () => { st.outfit = null; renderOutfits(); });
+bar("exBar", Object.keys(A.EXPR), "ex", e => A.EXPR_NAMES[e] || e);
+bar("emoteBar", Object.keys(A.EMOTES), "emote", e => A.EMOTE_NAMES[e] || e, () => (st.emoteAt = performance.now()));
+bar("sceneBar", Object.keys(A.SCENES), "scene", k => A.SCENES[k].name);
+bar("todBar", Object.keys(A.TOD), "tod", k => ({ day: "白天", sunset: "傍晚", night: "夜里" })[k] || k);
+function renderOutfits() { const b = $("outfitBar"); b.innerHTML = "<span>服装</span>"; const outs = Object.keys(A.castById[st.who].outfits || {}); st.outfit = outs[0]; bar("outfitBar", outs, "outfit"); }
+renderOutfits();
+$("bTalk").onclick = () => { st.talk = !st.talk; $("bTalk").setAttribute("aria-pressed", st.talk); };
+let prevPose = "rest";
+bar("poseBar", Object.keys(A.POSES), "pose", k => A.POSE_NAMES[k] || k, () => { st.poseFrom = prevPose; st.poseAt = performance.now(); prevPose = st.pose; });
+bar("actBar", Object.keys(A.ACTS).filter(k => k !== "bob"), "act", k => A.ACT_NAMES[k] || k, () => (st.actAt = performance.now()));
+$("bDuo").onclick = () => { st.duo = !st.duo; $("bDuo").setAttribute("aria-pressed", st.duo); };
+
+for (const c of A.CAST) {
+  const row = document.createElement("div");
+  row.innerHTML = `<h2 style="font-size:16px;margin:16px 0 8px">${c.name}${c.age != null ? ` · ${c.age} 岁` : ""} <small style="color:var(--muted);font-family:var(--f-body)">${c.note || ""}</small></h2>`;
+  const faces = document.createElement("div"); faces.className = "faces";
+  for (const ex of Object.keys(A.EXPR)) { const f = document.createElement("figure"), cv = document.createElement("canvas"); A.bust(c, ex).toCanvas(cv); f.append(cv, document.createTextNode(A.EXPR_NAMES[ex] || ex)); faces.append(f); }
+  row.append(faces); $("cast").append(row);
+}
+const live = [];
+for (const id of Object.keys(A.SCENES)) for (const tod of Object.keys(A.TOD)) {
+  const f = document.createElement("figure"), cv = document.createElement("canvas"); cv.width = A.W; cv.height = A.H;
+  f.append(cv, document.createTextNode(`${A.SCENES[id].name} · ${tod}`)); $("scenes").append(f); live.push([id, tod, cv]);
+}
+$("pal").innerHTML = Object.entries(A.PAL).map(([k, v]) => `<span title="${k} ${v}" style="background:${v}"></span>`).join("");
+let last = 0;
+(function loop(t) {
+  if (t - last > 66) {
+    last = t;
+    if (!st.blinkAt) st.blinkAt = t + 1500;
+    const bt = t - st.blinkAt; let blink = 0;
+    if (bt >= 0) { blink = bt < 60 ? 1 : bt < 150 ? 2 : bt < 210 ? 1 : 0; if (bt >= 210) st.blinkAt = t + 2200 + Math.random() * 3000; }
+    const et = (t - st.emoteAt) / 1000;
+    if (st.exCur !== st.ex) { st.exFrom = st.exCur || st.ex; st.exAt = t; st.exCur = st.ex; }
+    const me = { id: st.who, pos: st.duo ? "l" : "c", ex: st.ex, exFrom: st.exFrom, exT: t - (st.exAt || 0), speaking: st.talk, outfit: st.outfit, blink, talk: st.talk ? Math.floor(t / 90) % 2 : 0,
+      pose: st.pose, poseFrom: st.poseFrom, poseK: Math.min(1, (t - st.poseAt) / 260), act: st.act, actT: t - st.actAt, emote: et < 1.6 ? st.emote : null, emoteT: et };
+    const chars = [me];
+    if (st.duo) { const other = A.CAST.find(c => c.id !== st.who); if (other) chars.push({ id: other.id, pos: "r", ex: "neutral", dim: 0.35 }); }
+    A.frame(st.scene, t / 1000, { chars, tod: st.tod }).toCanvas($("hero"));
+    if (t - (st.liveAt || 0) > 500) { st.liveAt = t; for (const [id, tod, cv] of live) A.frame(id, t / 1000, { tod }).toCanvas(cv); } // 场景缩略图半秒刷一次，大图才流畅
+  }
+  requestAnimationFrame(loop);
+})(0);
+</script>
+</body>
+</html>
